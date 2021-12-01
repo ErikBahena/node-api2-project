@@ -5,7 +5,8 @@ const router = express.Router();
 const Model = require("./posts-model");
 
 // get all posts
-router.get("/", (req, res) => {
+// not using the request object so replacing it with _
+router.get("/", (_, res) => {
   Model.find()
     .then((posts) => res.status(200).json(posts))
     .catch(() =>
@@ -36,7 +37,7 @@ router.get("/:id", (req, res) => {
 });
 
 // create a new "post" lol.
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   if (!req.body.title || !req.body.contents) {
     res
       .status(400)
@@ -45,8 +46,14 @@ router.post("/", (req, res) => {
   }
 
   Model.insert(req.body)
-    .then((post) => {
-      res.status(201).json(post);
+    .then(({ id }) => {
+      Model.findById(id)
+        .then((post) => res.status(201).json(post))
+        .catch(() =>
+          res
+            .status(404)
+            .json({ message: "The post information could not be retrieved" })
+        );
     })
     .catch(() =>
       res.status(500).json({
@@ -64,15 +71,30 @@ router.put("/:id", (req, res) => {
   }
 
   Model.update(req.params.id, req.body)
-    .then((post) => {
-      if (!post) {
+    .then((count) => {
+      if (!count) {
         res
           .status(404)
           .json({ message: "The post with the specified ID does not exist" });
+
         return;
       }
 
-      res.status(200).json(post);
+      if (count === 1) {
+        Model.findById(req.params.id)
+          .then((post) => {
+            res.status(200).json(post);
+          })
+          .catch(() =>
+            res
+              .status(500)
+              .json({ message: "The post information could not be retrieved" })
+          );
+      }
+
+      if (count !== 1) {
+        throw new Error();
+      }
     })
     .catch(() =>
       res
@@ -81,17 +103,20 @@ router.put("/:id", (req, res) => {
     );
 });
 // delete a post
-router.delete("/:id", (req, res) => {
+router.delete("/:id", async (req, res) => {
+  const deletedPost = await Model.findById(req.params.id);
+
   Model.remove(req.params.id)
-    .then((post) => {
-      if (!post) {
+    .then((count) => {
+      if (!count || !deletedPost) {
         res
           .status(404)
           .json({ message: "The post with the specified ID does not exist" });
+
         return;
       }
 
-      res.status(204);
+      res.status(200).json(deletedPost);
     })
     .catch(() =>
       res.status(500).json({ message: "The post could not be removed" })
@@ -102,15 +127,11 @@ router.delete("/:id", (req, res) => {
 router.get("/:id/comments", (req, res) => {
   Model.findPostComments(req.params.id)
     .then((comments) => {
-      if (~comments) {
-        res
-          .status(404)
-          .json({ message: "The post with the specified ID does not exist" });
-
-        return;
-      }
-
-      res.status(200).json(comments);
+      comments.length === 0
+        ? res
+            .status(404)
+            .json({ message: "The post with the specified ID does not exist" })
+        : res.status(200).json(comments);
     })
     .catch(() =>
       res
